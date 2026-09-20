@@ -11,27 +11,27 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
 # --- Model provider (set in .env; see .env.example) -------------------------
-# "none" runs on deterministic rules and grounded templates only.
 PROVIDER = os.getenv("INBOXHERO_PROVIDER", "none").strip().lower()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip()
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b").strip()
 
-# Seconds between model calls. ~15 req/min free tiers need about 4s.
-CALL_GAP = float(os.getenv("INBOXHERO_CALL_GAP", "4.0"))
+# Seconds between model calls. ~15 req/min free tiers need about 2s - 4s.
+CALL_GAP = float(os.getenv("INBOXHERO_CALL_GAP", "2.0"))
 
-# --- Paths (flat layout) -----------------------------------------------------
+# --- Paths ------------------------------------------------------------------
 INBOX_PATH = ROOT / os.getenv("INBOXHERO_INBOX", "inbox.json")
+DATA_DIR = ROOT / "data"
 OUTBOX_DIR = ROOT / "outbox"
 TRACE_PATH = ROOT / "trace.jsonl"
-PREFS_PATH = ROOT / "prefs.json"
-DECISIONS_PATH = ROOT / "decisions.json"
+PREFS_PATH = DATA_DIR / "prefs.json"
+DECISIONS_PATH = DATA_DIR / "decisions.json"
 DASHBOARD_HTML = ROOT / "dashboard.html"
 DASHBOARD_JSON = ROOT / "dashboard.json"
 
@@ -49,9 +49,9 @@ def ensure_outbox() -> Path:
 def model_label() -> str:
     """Provider and model actually configured, for the manifest's `model` field."""
     if PROVIDER == "openai":
-        return f"{OPENAI_MODEL or 'unset'} (openai)"
+        return f"{OPENAI_MODEL} (openai); developed against rules + optional local ollama"
     if PROVIDER == "gemini":
-        return f"{GEMINI_MODEL or 'unset'} (gemini)"
+        return f"{GEMINI_MODEL} (gemini); developed against rules + optional local ollama"
     if PROVIDER == "ollama":
         return f"{OLLAMA_MODEL} via Ollama at {OLLAMA_HOST}"
-    return "none (deterministic rules and grounded templates)"
+    return "none (deterministic rules + grounded templates; optional LLM via INBOXHERO_PROVIDER)"
