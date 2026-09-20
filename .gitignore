@@ -1,0 +1,43 @@
+# Environments
+env/
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Distribution / Packaging
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.egg
+
+# OS generated files
+.DS_Store
+Thumbs.db
