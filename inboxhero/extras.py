@@ -1,5 +1,3 @@
-"""Part 8 capabilities, each runnable on its own through demo.py --cap X1..X5."""
-
 from __future__ import annotations
 
 import json

@@ -1,6 +1,3 @@
-"""Grounded drafts. A draft may only contain facts found in messages it cites; if the inbox does
-not contain what was asked for, nothing is drafted and the message is flagged instead."""
-
 from __future__ import annotations
 
 import re

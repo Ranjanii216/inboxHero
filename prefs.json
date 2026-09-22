@@ -1,0 +1,13 @@
+{
+  "no_meetings_before": "11:00",
+  "sources": {
+    "no_meetings_before": "m041"
+  },
+  "cc_rules": [
+    {
+      "cc": "priya@paperjet.io",
+      "sender_domain": "hartwellcho.com",
+      "source": "m015"
+    }
+  ]
+}

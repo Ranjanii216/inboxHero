@@ -1,9 +1,3 @@
-"""Cheap, deterministic rules. Noise, security notices, phishing and injections never reach a model.
-
-Everything here works on message content and on the *parsed* sender domain. Nothing is keyed on
-message ids or thread names.
-"""
-
 from __future__ import annotations
 
 import re
@@ -13,7 +7,7 @@ import config
 try:
     from inboxhero.store import Message
 except ImportError:
-    from inbox.store import Message
+    from inboxhero.store import Message
 
 DISPOSITIONS = ("reply", "archive", "defer", "delegate", "escalate")
 

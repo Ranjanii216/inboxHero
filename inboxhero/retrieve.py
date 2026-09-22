@@ -1,5 +1,3 @@
-"""Thread-walk first, keyword search across threads as a fallback. Pass cap=None to read silently."""
-
 from __future__ import annotations
 
 import re

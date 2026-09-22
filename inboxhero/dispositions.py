@@ -1,12 +1,3 @@
-"""Every message gets exactly one disposition and a stated reason.
-
-Routing is by content, in this order: rules for noise, security notices, phishing and hostile mail;
-then the owner's own mail; standing instructions; legal and press senders; time commitments
-(checked against the stored preferences and against each other); asks that commit Sam; asks the
-inbox can or cannot answer. A model is consulted only for an ask the inbox cannot answer, and only
-if a provider is configured. Nothing is keyed on message ids or thread names.
-"""
-
 from __future__ import annotations
 
 import json

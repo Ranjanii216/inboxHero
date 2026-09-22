@@ -1,9 +1,3 @@
-"""Hostile-mail handling is architecture, not a prompt line.
-
-Email text is never a source of tool calls. This module only *detects and reports*; it holds no
-send or delete capability, and nothing here can write to outbox/.
-"""
-
 from __future__ import annotations
 
 import re

@@ -1,10 +1,3 @@
-"""Standing instructions that survive process exit. Email cannot widen this schema.
-
-Trust model: what protects the preference store is the fixed whitelist of keys and value shapes,
-not who the message claims to be from. m039-style spoofing from the owner's own address can at
-most *restrict* the owner (a later meeting cutoff within 06:00-14:00); it can never loosen the gate.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,15 +17,21 @@ _STANDING_RE = re.compile(r"standing request|from now on|going forward|always", 
 
 
 def load() -> dict[str, Any]:
-    if not config.PREFS_PATH.exists():
-        return {}
-    return json.loads(config.PREFS_PATH.read_text(encoding="utf-8"))
+    p = config.PREFS_PATH
+    if not p.exists():
+        p = config.DATA_DIR / "prefs.json"
+        if not p.exists():
+            return {}
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def save(prefs: dict[str, Any], *, cap: str | None = None) -> None:
     cleaned = {k: v for k, v in prefs.items() if k in ALLOWED_KEYS}
     config.PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    config.PREFS_PATH.write_text(json.dumps(cleaned, indent=2) + "\n", encoding="utf-8")
+    payload = json.dumps(cleaned, indent=2) + "\n"
+    config.PREFS_PATH.write_text(payload, encoding="utf-8")
+    if config.DATA_DIR.exists():
+        (config.DATA_DIR / "prefs.json").write_text(payload, encoding="utf-8")
     trace.emit("prefs_save", cap=cap, keys=sorted(cleaned))
 
 

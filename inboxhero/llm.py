@@ -1,6 +1,3 @@
-"""Optional language-model client. Email text is passed only as untrusted data, and the model
-returns text only: it is given no tools and nothing here can send, delete or change preferences."""
-
 from __future__ import annotations
 
 import json

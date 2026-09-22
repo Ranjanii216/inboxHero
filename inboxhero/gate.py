@@ -1,10 +1,3 @@
-"""Irreversible actions (send, delete) are reachable only through this module.
-
-Two safeguards, both implemented: --dry-run shows exactly what would happen and writes nothing;
-otherwise each action stops for a per-action human y/n. Sending writes one file per message to
-outbox/ and nowhere else. Every gated decision is logged (without the message body).
-"""
-
 from __future__ import annotations
 
 import hashlib

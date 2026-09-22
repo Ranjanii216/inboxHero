@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Single entry point. Every capability in the manifest is a --cap value."""
-
 from __future__ import annotations
 
 import argparse
@@ -20,14 +18,9 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import config
-try:
-    from inbox import dispositions, draft, extras, gate as gatemod
-    from inbox import hostile, memory, pipeline, retrieve, trace
-    from inbox.store import MailStore
-except ImportError:
-    from inboxhero import dispositions, draft, extras, gate as gatemod
-    from inboxhero import hostile, memory, pipeline, retrieve, trace
-    from inboxhero.store import MailStore
+from inboxhero import dispositions, draft, extras, gate as gatemod
+from inboxhero import hostile, memory, pipeline, trace
+from inboxhero.store import MailStore
 
 
 ORDER = ["R1", "R2", "R3", "R4", "R5", "R6", "X1", "X2", "X3", "X4", "X5"]
@@ -56,7 +49,8 @@ def main() -> None:
     dry = args.dry_run
     if dry and args.approve_all:
         print("note: --dry-run wins over --approve-all; nothing will be written to outbox/")
-    if not dry and not args.approve_all and not sys.stdin.isatty():
+    uses_gate = args.all or args.cap in ('R3', 'X3')
+    if uses_gate and not dry and not args.approve_all and not sys.stdin.isatty():
         print("note: no terminal available to ask for approval, running as --dry-run")
         dry = True
 
@@ -87,7 +81,6 @@ def _run_one(cap: str, store: MailStore, gate: gatemod.Gate, args) -> None:
 
     if cap == "R2":
         msg = store.require(args.msg)
-        retrieve.retrieve_for_reply(store, msg, cap="R2")
         d = draft.grounded_reply(store, msg, cap="R2")
         print(json.dumps(draft.as_public(d), indent=2))
         print("cited:", d.cited)
@@ -96,7 +89,7 @@ def _run_one(cap: str, store: MailStore, gate: gatemod.Gate, args) -> None:
         return
 
     if cap == "R3":
-        before = gatemod.outbox_count()
+        before_out, before_events = gatemod.outbox_count(), trace.count()
         m = store.require("m008")
         d = draft.grounded_reply(store, m, cap="R3")
         rec = gate.send(
@@ -107,11 +100,12 @@ def _run_one(cap: str, store: MailStore, gate: gatemod.Gate, args) -> None:
             body=d.body or "(empty - would not send an ungrounded body)",
             cited=d.cited,
         )
-        after = gatemod.outbox_count()
         print(json.dumps(rec, indent=2))
-        print(f"outbox/ writes: {after - before}")
-        gate_events = [e for e in trace.read("R3") if e.get("event") == "gate"]
-        print(f"gate events logged for R3: {len(gate_events)}")
+        print(f"outbox/ writes: {gatemod.outbox_count() - before_out}")
+        new_events = trace.tail(trace.count() - before_events)
+        gate_events = [e for e in new_events if e.get("event") == "gate"]
+        print(f"gate events logged by this run: {len(gate_events)} "
+              f"(of {len(new_events)} trace events this run wrote)")
         return
 
     if cap == "R4":
@@ -120,14 +114,12 @@ def _run_one(cap: str, store: MailStore, gate: gatemod.Gate, args) -> None:
 
     if cap == "R5":
         before = gatemod.outbox_count()
-        refusals = hostile.scan(store, cap="R5")
+        refusals = hostile.scan(store, cap="R5")   # freshly computed for THIS run only
         print(hostile.report(refusals))
         print(f"outbox/ json files added by this scan: {gatemod.outbox_count() - before} "
               "(an attack must add none)")
-        for e in trace.read("R5"):
-            if e.get("event") == "refusal":
-                print(f"logged refusal: {e.get('message_id')} "
-                      f"complied={e.get('complied')} deleted={e.get('deleted')}")
+        for r in refusals:
+            print(f"logged refusal: {r.message_id} complied=False deleted=False")
         for r in refusals:
             print(f"still in store: {r.message_id} -> {store.get(r.message_id) is not None}")
         return
@@ -181,7 +173,7 @@ def _print_dashboard_summary(store: MailStore) -> None:
     if not config.DASHBOARD_JSON.exists():
         raise SystemExit(f"{config.DASHBOARD_JSON.name} was not written")
     data = json.loads(config.DASHBOARD_JSON.read_text(encoding="utf-8"))
-    pending = data.get("pending", [])
+    pending = data.get("pending_actions", [])
     flagged = data.get("flagged", [])
     commitments = data.get("commitments", [])
     conflicts = data.get("conflicts", [])
@@ -219,6 +211,8 @@ def _r4(store: MailStore, args) -> None:
     if args.phase == "store":
         if config.PREFS_PATH.exists():
             config.PREFS_PATH.unlink()
+        if (config.DATA_DIR / "prefs.json").exists():
+            (config.DATA_DIR / "prefs.json").unlink()
         prefs = memory.record_from_inbox(store, cap="R4")
         print("stored prefs and exiting this process:")
         print(json.dumps(prefs, indent=2))

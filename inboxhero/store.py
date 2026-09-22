@@ -1,5 +1,3 @@
-"""Local mail store. Email bodies are untrusted data and never become tools."""
-
 from __future__ import annotations
 
 import json

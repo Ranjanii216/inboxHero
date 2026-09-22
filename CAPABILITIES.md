@@ -72,6 +72,3 @@ Preferences may only add restrictions or recipients. A message can never use a p
 
 The exact command, observable outcome and evidence for each is in `capabilities.json`. That file is the machine-readable version and is what a marking script reads; this file is for a human. Keep the two in step.
 
-## Final Report
-
-Answers live in `README.md` (the assignment's required location), with the same four questions restated there.

@@ -1,5 +1,3 @@
-"""Environment-driven model and path configuration. No secrets in code."""
-
 from __future__ import annotations
 
 import os
@@ -30,8 +28,8 @@ INBOX_PATH = ROOT / os.getenv("INBOXHERO_INBOX", "inbox.json")
 DATA_DIR = ROOT / "data"
 OUTBOX_DIR = ROOT / "outbox"
 TRACE_PATH = ROOT / "trace.jsonl"
-PREFS_PATH = DATA_DIR / "prefs.json"
-DECISIONS_PATH = DATA_DIR / "decisions.json"
+PREFS_PATH = ROOT / "prefs.json"
+DECISIONS_PATH = ROOT / "decisions.json"
 DASHBOARD_HTML = ROOT / "dashboard.html"
 DASHBOARD_JSON = ROOT / "dashboard.json"
 

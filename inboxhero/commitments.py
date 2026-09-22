@@ -1,11 +1,3 @@
-"""Commitments extracted from message text, with citations, cross-message merging and conflicts.
-
-Nothing is hand-listed. Dates are found in sentences and resolved against the timestamp of the
-message that contains them ("Friday" = the next Friday on or after that message's date). Duplicate
-mentions are merged, and relative obligations ("two days before the board review") are resolved
-against the event they point to, citing both messages.
-"""
-
 from __future__ import annotations
 
 import re

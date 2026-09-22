@@ -1,9 +1,3 @@
-"""One linear pipeline: rules -> ground -> draft -> hold at the gate -> dashboard.
-
-The pipeline never sends anything. Every action it wants to take is listed in the Pending pane
-for a human; the gate is used by the capabilities that explicitly send (R3, X3).
-"""
-
 from __future__ import annotations
 
 import json
