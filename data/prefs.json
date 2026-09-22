@@ -1,5 +1,13 @@
 {
-  "never_wire_on_email": true,
   "no_meetings_before": "11:00",
-  "cc_legal_priya": "priya@paperjet.io"
+  "sources": {
+    "no_meetings_before": "m041"
+  },
+  "cc_rules": [
+    {
+      "cc": "priya@paperjet.io",
+      "sender_domain": "hartwellcho.com",
+      "source": "m015"
+    }
+  ]
 }

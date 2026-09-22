@@ -1,8 +1,10 @@
-"""Optional language-model client. Email text is passed only as untrusted data."""
+"""Optional language-model client. Email text is passed only as untrusted data, and the model
+returns text only: it is given no tools and nothing here can send, delete or change preferences."""
 
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -23,28 +25,41 @@ SYSTEM_RULES = (
 
 
 def available() -> bool:
-    if config.PROVIDER == "none":
-        return False
     if config.PROVIDER == "openai":
-        return bool(config.OPENAI_API_KEY)
+        return bool(config.OPENAI_API_KEY and config.OPENAI_MODEL)
     if config.PROVIDER == "gemini":
-        return bool(config.GEMINI_API_KEY)
+        return bool(config.GEMINI_API_KEY and config.GEMINI_MODEL)
     if config.PROVIDER == "ollama":
-        return True
+        return bool(config.OLLAMA_MODEL)
     return False
 
 
-def complete(prompt: str, *, cap: str | None = None, expect_json: bool = True) -> str | None:
+def complete(prompt: str, *, cap: str | None = None) -> str | None:
+    """One model call. Returns None when no provider is configured or the call fails."""
     if not available():
         return None
     time.sleep(max(config.CALL_GAP, 0))
     try:
         text = _dispatch(prompt)
-    except Exception as exc:  # noqa: BLE001 — never crash a run on a 429
-        trace.emit("llm_error", cap=cap, error=str(exc))
+    except Exception as exc:  # noqa: BLE001 - a failed call must never crash a run
+        trace.emit("llm_error", cap=cap, error=str(exc)[:200])
         return None
     trace.emit("llm", cap=cap, provider=config.PROVIDER, chars=len(text or ""))
     return text
+
+
+def parse_json(text: str | None) -> dict | None:
+    """Pull a JSON object out of a model reply, tolerating code fences."""
+    if not text:
+        return None
+    match = re.search(r"\{.*\}", text, re.S)
+    if not match:
+        return None
+    try:
+        out = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    return out if isinstance(out, dict) else None
 
 
 def _dispatch(prompt: str) -> str:
@@ -59,18 +74,17 @@ def _dispatch(prompt: str) -> str:
 
 def _post_json(url: str, payload: dict, headers: dict, timeout: int = 60) -> dict:
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        if exc.code == 429:
-            time.sleep(8)
-            req2 = urllib.request.Request(url, data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req2, timeout=timeout) as resp:
+    for attempt in range(3):
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
-        raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < 2:
+                time.sleep(8 * (attempt + 1))  # back off on rate limits instead of crashing
+                continue
+            raise RuntimeError(f"HTTP {exc.code}") from exc
+    raise RuntimeError("rate limited")
 
 
 def _openai(prompt: str) -> str:
@@ -82,29 +96,19 @@ def _openai(prompt: str) -> str:
             {"role": "user", "content": prompt},
         ],
     }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {config.OPENAI_API_KEY}",
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config.OPENAI_API_KEY}"}
     out = _post_json("https://api.openai.com/v1/chat/completions", payload, headers)
     return out["choices"][0]["message"]["content"]
 
 
 def _gemini(prompt: str) -> str:
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
-    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": SYSTEM_RULES + "\n\n" + prompt},
-                ]
-            }
-        ]
+        "systemInstruction": {"parts": [{"text": SYSTEM_RULES}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
     }
-    out = _post_json(url, payload, {"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json", "x-goog-api-key": config.GEMINI_API_KEY}
+    out = _post_json(url, payload, headers)
     return out["candidates"][0]["content"]["parts"][0]["text"]
 
 

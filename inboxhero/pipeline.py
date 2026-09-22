@@ -1,107 +1,81 @@
-"""One linear pipeline: rules → retrieve → draft → gate → dashboard."""
+"""One linear pipeline: rules -> ground -> draft -> hold at the gate -> dashboard.
+
+The pipeline never sends anything. Every action it wants to take is listed in the Pending pane
+for a human; the gate is used by the capabilities that explicitly send (R3, X3).
+"""
 
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 
 from inboxhero import commitments, dashboard, dispositions, draft, gate as gatemod
-from inboxhero import hostile, memory, retrieve, trace
-from inboxhero.rules import looks_like_phishing
+from inboxhero import hostile, memory
 from inboxhero.store import MailStore
 
+PROPOSED = {
+    "legal": "hold for Sam to review and sign; any reply is CC'd per the standing instruction",
+    "press": "hold; a human writes any quote",
+    "commitment": "hold; Sam decides whether to confirm, approve or sign",
+    "conflict": "do not accept; resolve the clash or propose alternatives first",
+    "time_request": "hold the reply until Sam decides",
+    "security": "ask Sam to confirm he made this change",
+    "grounded_ask": "send the grounded draft",
+}
 
-def run(store: MailStore, gate: gatemod.Gate, *, cap: str = "ALL") -> dict:
-    decisions = dispositions.classify_all(store, cap="R1")
-    prefs = memory.record_from_inbox(store, cap="R4")
-    refusals = hostile.scan(store, cap="R5")
-    hostile_ids = {r.message_id for r in refusals}
+
+def run(store: MailStore, gate: gatemod.Gate | None = None, *, cap: str = "R6") -> dict:
+    decisions = dispositions.classify_all(store, cap=cap)
+    prefs = memory.load()
+    refusals = hostile.scan(store, cap=cap)
+    phishing = hostile.scan_phishing(store, cap=cap)
 
     pending: list[dict] = []
-    flagged_extra: list[dict] = []
+    flagged_extra: list[dict] = list(phishing)
+    grounded_cited: dict[str, list[str]] = {}
 
-    # Grounded reply demonstration (never auto-sent).
-    m008 = store.require("m008")
-    retrieve.walk_thread(store, m008, cap="R2")
-    d008 = draft.grounded_reply(store, m008, cap="R2")
-    pending.append(
-        {
-            "message_id": "m008",
-            "subject": m008.subject,
-            "proposed": "send grounded reply citing m003",
-            "why": "Sending is irreversible; Devika asked for live broker credentials",
-        }
-    )
-
-    m012 = store.require("m012")
-    d012 = draft.grounded_reply(store, m012, cap="R2")
-    if not d012.grounded:
-        flagged_extra.append(
-            {
-                "message_id": "m012",
-                "attempted": "draft a reply about 'the thing'",
-                "instead": d012.note,
+    for d in decisions:
+        msg = store.require(d.message_id)
+        if d.category in ("injection", "phishing"):
+            continue                      # already in Flagged
+        if d.category == "ungrounded_ask":
+            flagged_extra.append({
+                "message_id": d.message_id,
+                "attempted": f"draft a reply to '{msg.subject}'",
+                "instead": f"drafted nothing: {d.reason}",
                 "kind": "ungrounded",
-            }
-        )
+            })
+            continue
+        if d.disposition == "reply":
+            dr = draft.grounded_reply(store, msg, cap=cap, cc=memory.apply_cc(msg, prefs))
+            if not dr.grounded:
+                flagged_extra.append({"message_id": d.message_id, "attempted": "draft a reply",
+                                      "instead": f"drafted nothing: {dr.note}", "kind": "ungrounded"})
+                continue
+            grounded_cited[d.message_id] = dr.cited
+            why = "sending is irreversible"
+            if dr.sensitive:
+                why += "; the draft contains an embedded credential"
+            pending.append({"message_id": d.message_id, "subject": msg.subject,
+                            "proposed": PROPOSED["grounded_ask"] + f" (cites {', '.join(dr.cited)})", "why": why})
+        elif d.disposition == "escalate":
+            pending.append({"message_id": d.message_id, "subject": msg.subject,
+                            "proposed": PROPOSED.get(d.category, "hold for a human"), "why": d.reason})
 
-    for msg in store:
-        if looks_like_phishing(msg):
-            flagged_extra.append(
-                {
-                    "message_id": msg.id,
-                    "attempted": "treat as a normal billing/IT request",
-                    "instead": "flagged as phishing/BEC; no send, left in place",
-                    "kind": "phishing",
-                }
-            )
-
-    # Legal mail: apply CC preference, still gated.
-    for mid in ("m018", "m055", "m048"):
-        msg = store.require(mid)
-        cc = memory.apply_cc(msg, prefs)
-        pending.append(
-            {
-                "message_id": mid,
-                "subject": msg.subject,
-                "proposed": f"draft a legal reply" + (f" CC {', '.join(cc)}" if cc else ""),
-                "why": "Legal signature / minutes — irreversible if sent, and money-adjacent",
-            }
-        )
-
-    pending.append(
-        {
-            "message_id": "m043",
-            "subject": store.require("m043").subject,
-            "proposed": "refuse 09:00; offer three later slots",
-            "why": "Accepting a meeting is a time commitment; also violates m041",
-        }
-    )
-    pending.append(
-        {
-            "message_id": "m010",
-            "subject": store.require("m010").subject,
-            "proposed": "do not confirm 15 Sep 15:00 until the dentist conflict is resolved",
-            "why": "Double-booked with m061; sending a yes cannot be unsent",
-        }
-    )
-
-    items, conflicts = commitments.extract(store, cap="R6")
+    items, conflicts = commitments.extract(store, cap=cap)
     dash = dashboard.build(store, decisions, refusals, pending, flagged_extra, items, conflicts)
-    trace.emit("dashboard", cap="R6", path=str(dash))
 
-    rule_handled = sum(1 for d in decisions if d.via == "rule")
     summary = {
         "messages_processed": len(store),
-        "undecided": sum(1 for d in decisions if not d.disposition),
-        "rule_handled": rule_handled,
-        "hostile": [asdict(r) for r in refusals],
+        "undecided": dash["undecided"],
+        "rule_handled": sum(1 for d in decisions if d.via == "rule"),
+        "pending": len(pending),
+        "flagged": len(dash["flagged"]),
+        "commitments": len(items),
+        "conflicts": len(conflicts),
+        "hostile_ids_left_in_place": sorted(r.message_id for r in refusals),
         "outbox_writes": gatemod.outbox_count(),
-        "prefs": prefs,
-        "grounded_m008_cited": d008.cited,
-        "m012_grounded": d012.grounded,
         "dashboard": "dashboard.html",
-        "hostile_ids_left_in_place": sorted(hostile_ids),
     }
-    print(json.dumps({k: summary[k] for k in summary if k != "hostile"}, indent=2))
-    return {"decisions": decisions, "refusals": refusals, "summary": summary, "prefs": prefs, "pending": pending}
+    print(json.dumps(summary, indent=2))
+    return {"decisions": decisions, "refusals": refusals, "summary": summary, "prefs": prefs,
+            "pending": pending, "flagged": dash["flagged"]}
